@@ -1,0 +1,32 @@
+{
+  "name": "specialist-agent",
+  "version": "0.1.0",
+  "description": "A learning agent built on the Claude Agent SDK that observes customer workflows once and replays them as skills.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "specialist-agent": "./dist/cli/main.js",
+    "specialist-wrapper": "./dist/cli/wrapper.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "agent": "tsx src/cli/main.ts",
+    "wrapper": "tsx src/cli/wrapper.ts",
+    "demo": "tsx examples/demo.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.1.13",
+    "@anthropic-ai/sdk": "^0.40.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
