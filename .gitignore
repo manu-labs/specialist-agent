@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.log
+.env
+.env.local
+
+# Per-tenant runtime workspaces (each is its own git repo)
+tenants/
+
+# Build artifacts
+*.tsbuildinfo
+.DS_Store
