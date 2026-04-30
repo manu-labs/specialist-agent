@@ -11,6 +11,7 @@ A learning agent built on the [Claude Agent SDK](https://docs.claude.com/en/agen
 | [`docs/CAPTURE.md`](docs/CAPTURE.md)      | Three ways to capture HTTP traces: DevTools HAR, MITM proxy, SDK hook   |
 | [`docs/EMBEDDING.md`](docs/EMBEDDING.md)  | Programmatic API for embedding the agent in your own host application  |
 | [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) | Common errors and fixes                                       |
+| [`prompts/`](prompts/)                    | Briefing prompts for follow-up planning agents (next features)          |
 
 ## Install
 
