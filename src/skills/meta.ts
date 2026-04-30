@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { TenantWorkspace } from "../tenant/workspace.js";
 import { SkillRegistry } from "./registry.js";
 import { replayWrapper } from "../execution/replay.js";
+import { markUnproven } from "./proving.js";
 import type { CommitContext, WrapperSpec } from "../types.js";
 
 /**
@@ -12,8 +13,14 @@ import type { CommitContext, WrapperSpec } from "../types.js";
  *   - update_wrapper: requires user confirmation; the agent shows a summary
  *   - add_workflow: assembles a new workflow from conversation
  *
- * Scope limit: these tools can ONLY edit files inside the tenant workspace.
- * The auth broker, runtime, and the meta server itself are off-limits.
+ * Scope limit: these tools never bypass `workspace.safeFs`. All writes go
+ * through SkillRegistry, which uses SafeFs under the hood. The auth broker,
+ * runtime, and the meta server itself are off-limits — enforced by the
+ * SafeFs allowlist, not just convention.
+ *
+ * Auto-rollback: after a successful merge, reactive_fix and update_wrapper
+ * both call `markUnproven`. The agent's PostToolUse hook reverts the merge
+ * if the wrapper fails on its first invocation.
  */
 export function createMetaSkillServer(args: {
   workspace: TenantWorkspace;
@@ -82,7 +89,7 @@ export function createMetaSkillServer(args: {
         message: `meta: reactive fix for ${input.wrapperName} — ${input.diffSummary}`,
         validation: { replayed: true, success: replay.success, notes: replay.error },
       };
-      await registry.commit(ctx);
+      const commit = await registry.commit(ctx);
 
       if (!replay.success) {
         return {
@@ -97,11 +104,12 @@ export function createMetaSkillServer(args: {
       }
 
       await registry.mergeToMain(branch);
+      await markUnproven(args.workspace, input.wrapperName, commit);
       return {
         content: [
           {
             type: "text" as const,
-            text: `Reactive fix applied: ${input.wrapperName} updated, replayed, and merged to main.`,
+            text: `Reactive fix applied: ${input.wrapperName} updated, replayed, and merged to main. Marked unproven — auto-revert if first invocation fails.`,
           },
         ],
       };
@@ -157,7 +165,7 @@ export function createMetaSkillServer(args: {
         testArgs: input.replayArgs,
       });
 
-      await registry.commit({
+      const commit = await registry.commit({
         trigger: "user-instruction",
         actor: "agent",
         message: `meta: ${input.summary}`,
@@ -177,9 +185,13 @@ export function createMetaSkillServer(args: {
       }
 
       await registry.mergeToMain(branch);
+      await markUnproven(args.workspace, input.wrapperName, commit);
       return {
         content: [
-          { type: "text" as const, text: `Wrapper ${input.wrapperName} updated, replayed, and merged.` },
+          {
+            type: "text" as const,
+            text: `Wrapper ${input.wrapperName} updated, replayed, and merged. Marked unproven — auto-revert if first invocation fails.`,
+          },
         ],
       };
     },

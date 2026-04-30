@@ -3,6 +3,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
 import type { TenantConfig } from "../types.js";
+import { SafeFs } from "../skills/safe-fs.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -11,9 +12,16 @@ const execFileAsync = promisify(execFile);
  *   .claude/skills/        — per-skill folders (SKILL.md + supporting files)
  *   services/              — generated TypeScript wrapper libs, one file per vendor
  *   .git/                  — every skill change is a commit
+ *
+ * Writes by the registry and meta tools go through `safeFs`, which enforces
+ * the scope limit from the architecture doc.
  */
 export class TenantWorkspace {
-  constructor(public readonly config: TenantConfig) {}
+  readonly safeFs: SafeFs;
+
+  constructor(public readonly config: TenantConfig) {
+    this.safeFs = new SafeFs(this);
+  }
 
   get root(): string {
     return this.config.workspacePath;
@@ -33,6 +41,14 @@ export class TenantWorkspace {
 
   serviceFile(vendor: string): string {
     return path.join(this.servicesDir, `${vendor}.ts`);
+  }
+
+  get stateFile(): string {
+    return path.join(this.root, ".specialist-state.json");
+  }
+
+  get rollbackLog(): string {
+    return path.join(this.root, "rollback.log");
   }
 
   async ensure(): Promise<void> {

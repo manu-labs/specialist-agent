@@ -20,6 +20,10 @@ async function main() {
 
   const agent = new SpecialistAgent({
     tenant: { id: "demo", workspacePath: tenantPath },
+    // Non-interactive demo: keep every synthesized parameter as-is.
+    // Run via `specialist-agent learn` (without --auto-keep) to exercise
+    // the confirmation prompt.
+    confirmParameter: async () => ({ action: "keep" }),
   });
 
   console.log("\nSynthesizing skills...");

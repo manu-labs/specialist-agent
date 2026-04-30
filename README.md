@@ -100,6 +100,10 @@ setDefaultBroker(
 const agent = new SpecialistAgent({
   tenant: { id: "acme", workspacePath: "/var/lib/specialist/tenants/acme" },
   confirmInstructedChange: async (summary) => myUI.confirm(summary),
+  // Spec's "Is `\"USD\"` a wrapper input or a constant?" pass — fires once
+  // per parameter on every newly synthesized wrapper. Default keeps all.
+  confirmParameter: async ({ wrapper, parameter, observedValue }) =>
+    myUI.askParameter({ wrapper, parameter, observedValue }),
 });
 
 for await (const msg of agent.run("Bill alice@example.com $500 for April")) {
@@ -134,13 +138,44 @@ Auth headers and obvious credential keys are scrubbed at capture time (`src/capt
 
 The agent's runtime exposes three tools via the `specialist-meta` MCP server:
 
-| Tool             | Trigger                                       | Confirmation         | Validation                    |
-| ---------------- | --------------------------------------------- | -------------------- | ----------------------------- |
-| `reactive_fix`   | Wrapper call failed with persistent drift     | Auto                 | Replay; merge only on success |
-| `update_wrapper` | User instruction mid-task                     | Required (host hook) | Replay; merge only on success |
-| `add_workflow`   | User walks through a sequence in conversation | Required (host hook) | None (pure prose)             |
+| Tool             | Trigger                                       | Confirmation         | Validation                    | Auto-rollback                      |
+| ---------------- | --------------------------------------------- | -------------------- | ----------------------------- | ---------------------------------- |
+| `reactive_fix`   | Wrapper call failed with persistent drift     | Auto                 | Replay; merge only on success | Yes (revert on first-call failure) |
+| `update_wrapper` | User instruction mid-task                     | Required (host hook) | Replay; merge only on success | Yes (revert on first-call failure) |
+| `add_workflow`   | User walks through a sequence in conversation | Required (host hook) | None (pure prose)             | N/A (no wrappers)                  |
 
 Failed validations stay on a branch (`synth/...`, `meta/...`) so the host can review.
+
+**Auto-rollback** (spec: "if a freshly-merged skill version fails on its first production invocation, the agent reverts the commit"). After a meta-tool merge, the affected wrapper is marked unproven in `tenants/<id>/.specialist-state.json`. A `PostToolUse` hook on the agent's Bash invocations watches for `specialist-wrapper` calls; on success the mark is cleared, on failure the commit is reverted and an entry is appended to `tenants/<id>/rollback.log`.
+
+## Scope enforcement (`SafeFs`)
+
+The architecture doc says scope limits should be "enforced via filesystem permissions, not just convention." `src/skills/safe-fs.ts` is the gate every meta-tool and registry write goes through. It rejects any path outside the allowlist:
+
+- `.claude/skills/**` — skill files
+- `services/**` — generated wrapper functions
+- `.specialist-state.json` — proving tracker
+- `rollback.log` — rollback audit trail
+
+Anything else throws `ScopeViolationError`. Verify with `npx tsx examples/safefs-check.ts` (covers absolute paths, `..` traversal, and non-allowlisted directories).
+
+## Parameter confirmation pass
+
+Spec: *"synthesis output is shown to the user with each candidate variable highlighted ('Is `\"USD\"` a wrapper input or a constant?'). One confirmation pass per wrapper."*
+
+After synthesis, every parameter on every newly synthesized wrapper is presented to the host's `confirmParameter` hook with the value observed in the trace. The host returns either `{ action: "keep" }` or `{ action: "freeze", constantValue }`. Frozen parameters are inlined into the wrapper's URL template + function body and removed from the spec — so the agent will never pass them as arguments.
+
+CLI:
+
+```bash
+# Interactive — prompt for each parameter
+specialist-agent learn --tenant=tenants/acme --har=./trace.har --intent="..."
+
+# Non-interactive — keep all parameters as the model proposed them
+specialist-agent learn --tenant=tenants/acme --har=./trace.har --intent="..." --auto-keep
+```
+
+The `npm run demo` path uses `--auto-keep` semantics for non-interactive runs.
 
 ## What's deliberately not here
 
@@ -148,14 +183,16 @@ Per the architecture doc:
 
 - **No frame/screen capture.** HTTP is the source of truth for v1.
 - **No streaming relevance filter.** Filtering happens at synthesis time on the trimmed trace.
-- **No multi-recording parameter inference.** A single trace + a confirmation pass handles ambiguity.
+- **No multi-recording parameter inference.** A single trace + the confirmation pass handles ambiguity.
 - **No smart wrapper functions.** Wrappers stay thin. Logic lives in workflows or agent reasoning.
-- **No self-modification beyond skills.** The meta tools cannot touch the auth broker, the runtime, or themselves — only files under the tenant workspace's `.claude/skills/` and `services/`.
+- **No self-modification beyond skills.** The meta tools cannot touch the auth broker, the runtime, or themselves — enforced by `SafeFs` allowlist.
 
 ## Scripts
 
 ```bash
 npm run typecheck     # tsc --noEmit
 npm run build         # emit dist/
-npm run demo          # examples/demo.ts
+npm run demo          # examples/demo.ts (end-to-end synthesis)
+npx tsx examples/safefs-check.ts    # SafeFs scope-rejection assertions
+npx tsx examples/proving-check.ts   # auto-rollback tracker assertions
 ```

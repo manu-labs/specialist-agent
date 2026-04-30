@@ -76,8 +76,23 @@ export interface SynthesisResult {
     spec: WrapperSpec;
     /** TypeScript function source body (the part inside the function — no signature). */
     implementation: string;
+    /**
+     * Per-parameter sample values pulled from the trace. Drives the
+     * "Is `"USD"` a wrapper input or a constant?" confirmation pass.
+     * Keyed by parameter name; values are the literal observed in the trace.
+     */
+    observedValues: Record<string, unknown>;
   }>;
 }
+
+/**
+ * Decision returned by the host for one parameter during the confirmation
+ * pass. `keep` leaves the parameter as-is. `freeze` removes it from the
+ * spec and inlines `constantValue` into the wrapper body.
+ */
+export type ParameterDecision =
+  | { action: "keep" }
+  | { action: "freeze"; constantValue: unknown };
 
 export interface TenantConfig {
   id: string;

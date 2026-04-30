@@ -1,5 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { HttpTrace, SynthesisResult } from "../types.js";
+import type {
+  HttpTrace,
+  ParameterDecision,
+  SynthesisResult,
+  WrapperSpec,
+} from "../types.js";
 import { SYNTHESIS_SYSTEM_PROMPT, renderUserPrompt } from "./prompt.js";
 
 const SYNTHESIS_MODEL = "claude-opus-4-7";
@@ -56,8 +61,14 @@ const SYNTHESIS_TOOL = {
               description:
                 "TypeScript function body (without signature) that returns runWrapper({...}). Has access to `args` and `runWrapper`.",
             },
+            observedValues: {
+              type: "object",
+              description:
+                "Per-parameter sample values pulled from the trace. Keys are parameter names; values are the literal observed in the request. Used to drive a 'is this a constant?' confirmation pass with the user.",
+              additionalProperties: true,
+            },
           },
-          required: ["spec", "implementation"],
+          required: ["spec", "implementation", "observedValues"],
         },
       },
     },
@@ -118,4 +129,78 @@ export async function synthesizeFromTrace(args: {
   }
 
   return toolUse.input as SynthesisResult;
+}
+
+/**
+ * Apply the host's parameter decisions to one wrapper. Each `freeze`
+ * decision drops the parameter from `spec.parameters`, inlines its constant
+ * into both the `urlTemplate` and the implementation source, and updates
+ * the description string in the SKILL.md so the wrapper accurately reflects
+ * what the agent will see at invocation time.
+ *
+ * Returns a new spec + implementation. Inputs are not mutated.
+ */
+export function applyParameterDecisions(args: {
+  spec: WrapperSpec;
+  implementation: string;
+  decisions: Record<string, ParameterDecision>;
+}): { spec: WrapperSpec; implementation: string } {
+  let urlTemplate = args.spec.http.urlTemplate;
+  let implementation = args.implementation;
+  const remaining: typeof args.spec.parameters = [];
+
+  for (const param of args.spec.parameters) {
+    const decision = args.decisions[param.name] ?? { action: "keep" };
+    if (decision.action === "keep") {
+      remaining.push(param);
+      continue;
+    }
+    const literal = formatLiteral(decision.constantValue, param.type);
+    const stringLiteral = stringFormOf(decision.constantValue);
+
+    // {arg} placeholders in the URL template are inlined as plain strings.
+    urlTemplate = urlTemplate.split(`{${param.name}}`).join(stringLiteral);
+    urlTemplate = urlTemplate.split(`\${args.${param.name}}`).join(stringLiteral);
+
+    // args.foo references in the function body become literal expressions.
+    // Order matters: the longer template-literal form first.
+    implementation = implementation.split(`\${args.${param.name}}`).join(stringLiteral);
+    implementation = implementation
+      .split(new RegExp(`\\bargs\\.${escapeRegex(param.name)}\\b`))
+      .join(literal);
+  }
+
+  return {
+    spec: {
+      ...args.spec,
+      parameters: remaining,
+      http: { ...args.spec.http, urlTemplate },
+    },
+    implementation,
+  };
+}
+
+function formatLiteral(value: unknown, type: WrapperSpec["parameters"][number]["type"]): string {
+  switch (type) {
+    case "string":
+      return JSON.stringify(typeof value === "string" ? value : String(value));
+    case "number":
+      return String(typeof value === "number" ? value : Number(value));
+    case "boolean":
+      return String(Boolean(value));
+    default:
+      // Object/structured: serialize and trust the implementation context.
+      return JSON.stringify(value);
+  }
+}
+
+function stringFormOf(value: unknown): string {
+  if (value == null) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return JSON.stringify(value);
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

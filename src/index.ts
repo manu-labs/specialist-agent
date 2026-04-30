@@ -6,6 +6,7 @@ export type { SpecialistAgentOptions } from "./agent.js";
 export { TenantWorkspace } from "./tenant/workspace.js";
 export { SkillRegistry } from "./skills/registry.js";
 export { createMetaSkillServer } from "./skills/meta.js";
+export { SafeFs, ScopeViolationError } from "./skills/safe-fs.js";
 
 export { AuthBroker } from "./auth/broker.js";
 export type { AuthCredential, AuthProvider, AuthScheme } from "./auth/broker.js";

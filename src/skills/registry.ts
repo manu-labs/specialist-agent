@@ -3,6 +3,9 @@ import path from "node:path";
 import type { TenantWorkspace } from "../tenant/workspace.js";
 import type { CommitContext, SkillMetadata, SynthesisResult, WrapperSpec } from "../types.js";
 
+// All filesystem writes here go through workspace.safeFs — see safe-fs.ts.
+// `fs` is only retained for reads, which are unrestricted.
+
 /**
  * Git-backed skill registry. Every mutation is a commit. Branches are
  * used for in-flight changes that haven't passed validation; merge to
@@ -29,19 +32,19 @@ export class SkillRegistry {
 
   async writeWrapper(spec: WrapperSpec, implementation: string): Promise<void> {
     const dir = this.workspace.skillDir(spec.name);
-    await fs.mkdir(dir, { recursive: true });
+    await this.workspace.safeFs.mkdir(dir, { recursive: true });
 
     const skillMd = renderWrapperSkillMd(spec);
-    await fs.writeFile(path.join(dir, "SKILL.md"), skillMd, "utf8");
+    await this.workspace.safeFs.writeFile(path.join(dir, "SKILL.md"), skillMd);
 
     await this.upsertServiceFunction(spec, implementation);
   }
 
   async writeWorkflow(workflow: SynthesisResult["workflow"]): Promise<void> {
     const dir = this.workspace.skillDir(workflow.name);
-    await fs.mkdir(dir, { recursive: true });
+    await this.workspace.safeFs.mkdir(dir, { recursive: true });
     const md = renderWorkflowSkillMd(workflow);
-    await fs.writeFile(path.join(dir, "SKILL.md"), md, "utf8");
+    await this.workspace.safeFs.writeFile(path.join(dir, "SKILL.md"), md);
   }
 
   /**
@@ -77,7 +80,7 @@ export class SkillRegistry {
       }
     }
 
-    await fs.writeFile(file, next, "utf8");
+    await this.workspace.safeFs.writeFile(file, next);
   }
 
   async commit(ctx: CommitContext): Promise<string> {

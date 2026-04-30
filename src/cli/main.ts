@@ -14,6 +14,7 @@ import readline from "node:readline";
 import { SpecialistAgent } from "../agent.js";
 import { TenantWorkspace } from "../tenant/workspace.js";
 import { importHar } from "../capture/har.js";
+import type { ParameterDecision } from "../types.js";
 
 interface Flags {
   tenant?: string;
@@ -21,6 +22,8 @@ interface Flags {
   intent?: string;
   model?: string;
   yes?: boolean;
+  /** Skip the parameter-confirmation prompt and keep all parameters. */
+  "auto-keep"?: boolean;
   positional: string[];
 }
 
@@ -48,12 +51,33 @@ async function cmdLearn(flags: Flags): Promise<void> {
   const agent = new SpecialistAgent({
     tenant: { id: path.basename(flags.tenant!), workspacePath: path.resolve(flags.tenant!) },
     ...(flags.model ? { model: flags.model } : {}),
+    confirmParameter: flags["auto-keep"]
+      ? async () => ({ action: "keep" }) as ParameterDecision
+      : async ({ wrapper, parameter, observedValue }) => {
+          const observed = renderObserved(observedValue);
+          console.log(
+            `\n${wrapper.name} — parameter \`${parameter.name}\` (${parameter.type}, ${parameter.required ? "required" : "optional"})`,
+          );
+          console.log(`  observed in trace: ${observed}`);
+          const ans = (await promptText("  [k]eep as parameter / [f]reeze as constant? [k] ")).toLowerCase();
+          if (ans === "f" || ans === "freeze") {
+            return { action: "freeze", constantValue: observedValue };
+          }
+          return { action: "keep" };
+        },
   });
   const result = await agent.learnFromTrace(trace, { skipReplay: false });
 
-  console.log(`Synthesized workflow: ${result.workflow}`);
+  console.log(`\nSynthesized workflow: ${result.workflow}`);
   console.log(`Wrappers: ${result.wrappers.join(", ") || "(none new)"}`);
   if (result.commit) console.log(`Commit: ${result.commit.slice(0, 12)}`);
+}
+
+function renderObserved(value: unknown): string {
+  if (value === undefined) return "(none)";
+  if (value === null) return "null";
+  const s = typeof value === "string" ? JSON.stringify(value) : JSON.stringify(value);
+  return s.length > 200 ? s.slice(0, 200) + "…" : s;
 }
 
 async function cmdRun(flags: Flags): Promise<void> {
@@ -106,6 +130,16 @@ function promptUser(q: string): Promise<boolean> {
   });
 }
 
+function promptText(q: string): Promise<string> {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    rl.question(q, (a) => {
+      rl.close();
+      resolve(a.trim());
+    });
+  });
+}
+
 async function main() {
   const [cmd, ...rest] = process.argv.slice(2);
   const flags = parseFlags(rest);
@@ -118,7 +152,7 @@ async function main() {
       return cmdLog(flags);
     default:
       console.error("usage: specialist-agent <learn|run|log> [flags]");
-      console.error("  learn --tenant=<path> --har=<file> --intent=\"...\"");
+      console.error("  learn --tenant=<path> --har=<file> --intent=\"...\" [--auto-keep]");
       console.error("  run   --tenant=<path> [--yes] \"<prompt>\"");
       console.error("  log   --tenant=<path>");
       process.exit(2);

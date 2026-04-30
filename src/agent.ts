@@ -3,9 +3,17 @@ import path from "node:path";
 import { TenantWorkspace } from "./tenant/workspace.js";
 import { createMetaSkillServer } from "./skills/meta.js";
 import { SkillRegistry } from "./skills/registry.js";
-import { synthesizeFromTrace } from "./synthesis/synthesize.js";
-import type { CommitContext, HttpTrace, TenantConfig } from "./types.js";
+import { applyParameterDecisions, synthesizeFromTrace } from "./synthesis/synthesize.js";
+import type {
+  CommitContext,
+  HttpTrace,
+  ParameterDecision,
+  TenantConfig,
+  WrapperParameter,
+  WrapperSpec,
+} from "./types.js";
 import { replayWrapper } from "./execution/replay.js";
+import { clearUnproven, failUnproven, isUnproven, parseWrapperCommand } from "./skills/proving.js";
 
 /**
  * Per-tenant agent runtime. Wraps the Claude Agent SDK's `query()` and
@@ -24,6 +32,17 @@ export interface SpecialistAgentOptions {
    * auto-approve in non-interactive contexts; the CLI overrides this.
    */
   confirmInstructedChange?: (summary: string) => Promise<boolean>;
+  /**
+   * Per-parameter confirmation hook that drives the spec's
+   * "Is `"USD"` a wrapper input or a constant?" pass. Called once per
+   * parameter on every newly synthesized wrapper. Default: keep all
+   * (preserves current behavior for non-interactive callers).
+   */
+  confirmParameter?: (ctx: {
+    wrapper: WrapperSpec;
+    parameter: WrapperParameter;
+    observedValue: unknown;
+  }) => Promise<ParameterDecision>;
   /** Override the model used by the runtime. Defaults to the SDK default. */
   model?: string;
 }
@@ -86,12 +105,91 @@ export class SpecialistAgent {
           preset: "claude_code",
           append: this.systemPromptAppendix(wrapperCli),
         },
+        hooks: this.buildHooks(),
         // Don't let runaway loops burn the budget on a single user turn.
         maxTurns: 25,
       },
     })) {
       yield msg;
     }
+  }
+
+  /**
+   * Hooks that drive the auto-rollback guardrail. Spec: "If a freshly-merged
+   * skill version fails on its first production invocation, the agent reverts
+   * the commit and falls back to the prior version."
+   *
+   * PostToolUse fires after every Bash invocation (success or non-zero exit).
+   * PostToolUseFailure fires when the tool itself errored (timeout, etc).
+   * For each, we parse the command back to <vendor>.<function>, then either
+   * clear the unproven mark on success or revert on failure.
+   */
+  private buildHooks() {
+    const workspace = this.workspace;
+    const registry = this.registry;
+
+    const onBashFinish = async (
+      command: string,
+      outcome: { success: boolean; reason: string },
+    ) => {
+      const parsed = parseWrapperCommand(command);
+      if (!parsed) return;
+
+      const entry = await isUnproven(workspace, parsed.wrapperName);
+      if (!entry) return;
+
+      if (outcome.success) {
+        await clearUnproven(workspace, parsed.wrapperName);
+      } else {
+        await failUnproven(workspace, parsed.wrapperName, registry, outcome.reason);
+      }
+    };
+
+    return {
+      PostToolUse: [
+        {
+          hooks: [
+            async (input: unknown) => {
+              const i = input as {
+                tool_name?: string;
+                tool_input?: { command?: string };
+                tool_response?: unknown;
+              };
+              if (i.tool_name !== "Bash" || !i.tool_input?.command) {
+                return { continue: true };
+              }
+              const success = !looksLikeBashFailure(i.tool_response);
+              await onBashFinish(i.tool_input.command, {
+                success,
+                reason: success ? "ok" : describeBashFailure(i.tool_response),
+              });
+              return { continue: true };
+            },
+          ],
+        },
+      ],
+      PostToolUseFailure: [
+        {
+          hooks: [
+            async (input: unknown) => {
+              const i = input as {
+                tool_name?: string;
+                tool_input?: { command?: string };
+                error?: string;
+              };
+              if (i.tool_name !== "Bash" || !i.tool_input?.command) {
+                return { continue: true };
+              }
+              await onBashFinish(i.tool_input.command, {
+                success: false,
+                reason: i.error ?? "tool error",
+              });
+              return { continue: true };
+            },
+          ],
+        },
+      ],
+    };
   }
 
   /**
@@ -111,6 +209,28 @@ export class SpecialistAgent {
       trace,
       existingWrappers: existing,
     });
+
+    // Spec: parameter confirmation pass — "Is `"USD"` a wrapper input or a
+    // constant?". Walk every parameter on every new wrapper, ask the host,
+    // and inline frozen values. Default hook keeps all parameters.
+    const confirmParam = this.opts.confirmParameter ?? (async () => ({ action: "keep" }) as ParameterDecision);
+    for (const w of result.wrappers) {
+      const decisions: Record<string, ParameterDecision> = {};
+      for (const param of w.spec.parameters) {
+        decisions[param.name] = await confirmParam({
+          wrapper: w.spec,
+          parameter: param,
+          observedValue: w.observedValues[param.name],
+        });
+      }
+      const applied = applyParameterDecisions({
+        spec: w.spec,
+        implementation: w.implementation,
+        decisions,
+      });
+      w.spec = applied.spec;
+      w.implementation = applied.implementation;
+    }
 
     const branch = `synth/${result.workflow.name}-${Date.now()}`;
     await this.registry.checkoutBranch(branch);
@@ -190,6 +310,40 @@ export class SpecialistAgent {
       "  - Be terse. The user sees your text output but not your tool calls.",
     ].join("\n");
   }
+}
+
+/**
+ * Heuristic: did the Bash tool's response indicate the command failed?
+ *
+ * The Claude Code Bash tool returns its result as text + flags. A non-zero
+ * exit doesn't make the *tool* fail (the command ran), but the output usually
+ * carries a signal we can pick up: `is_error`, an explicit `error` field, or
+ * the wrapper CLI's own "wrapper failed:" prefix on stderr.
+ */
+function looksLikeBashFailure(response: unknown): boolean {
+  if (response == null) return false;
+  if (typeof response === "object") {
+    const r = response as Record<string, unknown>;
+    if (r.is_error === true) return true;
+    if (typeof r.error === "string" && r.error.length > 0) return true;
+    const text = [r.output, r.stdout, r.stderr, r.content]
+      .filter((v): v is string => typeof v === "string")
+      .join("\n");
+    if (text.includes("wrapper failed:")) return true;
+  }
+  if (typeof response === "string" && response.includes("wrapper failed:")) return true;
+  return false;
+}
+
+function describeBashFailure(response: unknown): string {
+  if (response == null) return "(no response)";
+  if (typeof response === "string") return response.slice(0, 500);
+  const r = response as Record<string, unknown>;
+  if (typeof r.error === "string") return r.error.slice(0, 500);
+  const text = [r.stderr, r.output, r.stdout, r.content]
+    .filter((v): v is string => typeof v === "string")
+    .join("\n");
+  return text.slice(0, 500) || "(unknown failure)";
 }
 
 function pickReplayArgs(spec: { parameters: Array<{ name: string; type: string; required: boolean }> }): Record<string, unknown> {

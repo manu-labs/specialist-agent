@@ -27,6 +27,7 @@ Discipline for wrappers:
         });
 - Wrapper names use dotted form: "<vendor>.<verb_object>", e.g. "stripe.create_invoice".
 - Vendor is the apex domain's brand (stripe, github, slack, linear, asana, notion, etc.).
+- For every parameter you define, emit the literal value you observed for it in the trace under \`observedValues\`. The user will be shown each (parameter, observed-value) pair and asked whether it should stay a parameter or be frozen as a constant. If you didn't see an observed value (the parameter is genuinely optional), emit \`null\`.
 
 Discipline for the workflow:
 - Pure markdown body. Reference wrappers by name, describe parameter plumbing in plain English, do NOT reproduce request/response shapes.
