@@ -8,7 +8,8 @@ A learning agent built on the [Claude Agent SDK](https://docs.claude.com/en/agen
 | ----------------------------------------- | ----------------------------------------------------------------------- |
 | **This file**                             | Quickstart, install, project layout, scripts                            |
 | [`docs/USAGE.md`](docs/USAGE.md)          | End-to-end real-world walkthrough — capture → synthesize → run          |
-| [`docs/CAPTURE.md`](docs/CAPTURE.md)      | Three ways to capture HTTP traces: DevTools HAR, MITM proxy, SDK hook   |
+| [`docs/CAPTURE.md`](docs/CAPTURE.md)      | Four ways to capture HTTP traces: DevTools HAR, browser extension, MITM proxy, SDK hook |
+| [`browser-extension/README.md`](browser-extension/README.md) | Chrome MV3 extension that captures workflows and emits a bundle file the host CLI consumes via `--bundle=` |
 | [`docs/EMBEDDING.md`](docs/EMBEDDING.md)  | Programmatic API for embedding the agent in your own host application  |
 | [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) | Common errors and fixes                                       |
 | [`prompts/`](prompts/)                    | Briefing prompts for follow-up planning agents (next features)          |
@@ -81,11 +82,11 @@ docs/
 ## CLI reference
 
 ```bash
-# Synthesize skills from a HAR export of an observed task.
+# Synthesize skills from an observed task.
+# Either pass a HAR (with --intent) or a bundle from the browser extension.
 specialist-agent learn \
   --tenant=tenants/<id> \
-  --har=./<file>.har \
-  --intent="<one-sentence description>" \
+  (--bundle=./bundle.json | --har=./<file>.har --intent="<one-sentence description>") \
   [--auto-keep]                 # skip parameter-confirmation prompt
 
 # Run the agent against the tenant's learned skills.
