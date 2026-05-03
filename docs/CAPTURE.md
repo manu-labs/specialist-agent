@@ -42,14 +42,19 @@ This is the easiest path for SaaS apps.
 
 ## Surface 2: Browser extension (Chrome)
 
-A first-party Chrome extension lives in `browser-extension/`. It captures the network conversation via the Chrome DevTools Protocol — same data DevTools sees, but driven by an action-bar popup and packaged as a single JSON `bundle`.
+A first-party Chrome extension lives in `browser-extension/`. It captures the network conversation via the Chrome DevTools Protocol — same data DevTools sees, driven by an action-bar popup. **By default the extension auto-POSTs each bundle to the synthesis backend you configure in the options page**, so the user never has to deal with files on the happy path.
 
 ```bash
 # 1. Build + install the extension (see browser-extension/README.md).
-# 2. Click the action icon → Start. Drive your workflow. Click Stop.
-# 3. Edit the intent + (optional) voice narration in the popup.
-# 4. Click "Download bundle" → save the .json somewhere.
+# 2. Open the options page → paste the synthesis endpoint + bearer token.
+# 3. Click the action icon → Start. Drive your workflow. Click Stop.
+# 4. The bundle is automatically POSTed to {endpoint}/v1/bundles.
+#    The popup shows "Submitted to host (trace …)" with an optional learnUrl.
+```
 
+If no endpoint is configured (or the POST fails), the bundle falls back to a local download so a recording is never silently lost. In that case feed it to the host CLI manually:
+
+```bash
 specialist-agent learn \
   --tenant=tenants/acme \
   --bundle=~/Downloads/specialist-bundle-20260502T153011Z-a3b9k2.json

@@ -36,6 +36,8 @@ export class CaptureSessionRunner {
   private narrative = "";
   private hostFilterPattern: string | null = null;
   private audio: { mimeType: string; bytes: ArrayBuffer; durationMs: number } | null = null;
+  private audioPromise: Promise<void> | null = null;
+  private audioResolver: (() => void) | null = null;
   private byHost = new Map<string, { count: number; bytes: number }>();
   private totalBytes = 0;
   private startedAt: string;
@@ -85,7 +87,29 @@ export class CaptureSessionRunner {
 
   setAudio(audio: { mimeType: string; bytes: ArrayBuffer; durationMs: number } | null): void {
     this.audio = audio;
+    this.audioResolver?.();
+    this.audioResolver = null;
     void this.persist();
+  }
+
+  /**
+   * Returns a promise that resolves once `setAudio` is called, or after
+   * `timeoutMs` elapses (so a misbehaving offscreen doc can't wedge the
+   * stop flow forever). Idempotent — calling again before resolution
+   * returns the same promise.
+   */
+  awaitAudio(timeoutMs: number): Promise<void> {
+    if (this.audioPromise) return this.audioPromise;
+    this.audioPromise = new Promise<void>((resolve) => {
+      this.audioResolver = resolve;
+      setTimeout(() => {
+        if (this.audioResolver) {
+          this.audioResolver();
+          this.audioResolver = null;
+        }
+      }, timeoutMs);
+    });
+    return this.audioPromise;
   }
 
   snapshot(): CaptureStats {

@@ -1,47 +1,86 @@
-import React, { useState } from "react";
+import React from "react";
+import type { SubmitResult } from "../../shared/messages.js";
+import type { SubmitState } from "../hooks/useStatsPort.js";
 
 interface Props {
-  onDownload: () => Promise<unknown>;
-  onPost: () => Promise<unknown>;
+  submit: SubmitState;
+  hasEndpoint: boolean;
+  onRetry: () => Promise<unknown>;
+  onDownloadFallback: () => Promise<unknown>;
   onDiscard: () => Promise<void>;
+  onConfigure: () => void;
 }
 
-export function SubmitMenu({ onDownload, onPost, onDiscard }: Props) {
-  const [busy, setBusy] = useState<"none" | "download" | "post" | "discard">("none");
-  const [result, setResult] = useState<string | null>(null);
-
-  const guard = async (kind: "download" | "post" | "discard", fn: () => Promise<unknown>) => {
-    setBusy(kind);
-    setResult(null);
-    try {
-      const r = (await fn()) as { ok?: boolean; status?: number; filename?: string; errorCode?: string; detail?: string; traceId?: string };
-      if (r?.ok === false) setResult(`error: ${r.errorCode ?? "unknown"} — ${r.detail ?? ""}`);
-      else if (r?.filename) setResult(`saved ${r.filename}`);
-      else if (r?.traceId) setResult(`accepted (trace ${r.traceId})`);
-      else if (kind === "post" && r?.status && r.status >= 200 && r.status < 300) setResult(`posted (status ${r.status})`);
-      else if (kind === "discard") setResult("discarded");
-      else setResult("done");
-    } catch (e) {
-      setResult(`error: ${(e as Error).message}`);
-    } finally {
-      setBusy("none");
-    }
-  };
-
+/**
+ * Auto-submit status panel. The extension POSTs to the configured
+ * backend automatically on Stop. This panel shows progress + result;
+ * the user only needs to act when something went wrong.
+ */
+export function SubmitMenu({ submit, hasEndpoint, onRetry, onDownloadFallback, onDiscard, onConfigure }: Props) {
+  if (submit.phase === "idle") return null;
+  if (submit.phase === "pending") {
+    return (
+      <div className="stats">
+        {hasEndpoint ? "Submitting to host…" : "Saving bundle…"}
+      </div>
+    );
+  }
   return (
     <>
+      {renderResult(submit.result)}
       <div className="row">
-        <button disabled={busy !== "none"} onClick={() => guard("download", onDownload)}>
-          {busy === "download" ? "…" : "Download bundle"}
-        </button>
-        <button disabled={busy !== "none"} onClick={() => guard("post", onPost)}>
-          {busy === "post" ? "…" : "Submit to host"}
-        </button>
-        <button disabled={busy !== "none"} onClick={() => guard("discard", onDiscard)}>
-          Discard
-        </button>
+        {submit.result.kind === "downloaded" && submit.result.reason !== "no_endpoint" && (
+          <button onClick={() => onRetry()}>Retry submit</button>
+        )}
+        {submit.result.kind === "failed" && (
+          <>
+            <button onClick={() => onRetry()}>Retry submit</button>
+            <button onClick={() => onDownloadFallback()}>Save locally</button>
+          </>
+        )}
+        {submit.result.kind === "downloaded" && submit.result.reason === "no_endpoint" && (
+          <button onClick={onConfigure}>Configure endpoint</button>
+        )}
+        <button onClick={() => onDiscard()}>Done</button>
       </div>
-      {result && <div className="stats">{result}</div>}
     </>
+  );
+}
+
+function renderResult(r: SubmitResult): React.ReactNode {
+  if (r.kind === "posted") {
+    return (
+      <div className="stats">
+        Submitted to host{r.traceId ? ` (trace ${r.traceId})` : ""}
+        {r.learnUrl && (
+          <>
+            {" — "}
+            <a href={r.learnUrl} target="_blank" rel="noreferrer">
+              view
+            </a>
+          </>
+        )}
+        .
+      </div>
+    );
+  }
+  if (r.kind === "downloaded") {
+    if (r.reason === "no_endpoint") {
+      return (
+        <div className="stats">
+          No host endpoint configured — saved <code>{r.filename}</code> locally instead.
+        </div>
+      );
+    }
+    return (
+      <div className="error">
+        Submit to host failed ({r.postError ?? "unknown"}). Saved <code>{r.filename}</code> locally as a fallback.
+      </div>
+    );
+  }
+  return (
+    <div className="error">
+      Submit failed: {r.errorCode} — {r.detail}
+    </div>
   );
 }

@@ -1,10 +1,11 @@
 import { useEffect, useState, useCallback } from "react";
-import type { ClientMessage } from "../../shared/messages.js";
+import type { ClientMessage, SubmitResult } from "../../shared/messages.js";
 
 export interface SessionSnapshot {
   active: boolean;
   intent: string;
   narrative: string;
+  lastSubmitResult: SubmitResult | null;
 }
 
 export function useSession() {
@@ -12,19 +13,23 @@ export function useSession() {
     active: false,
     intent: "",
     narrative: "",
+    lastSubmitResult: null,
   });
 
   useEffect(() => {
     void send({ type: "POPUP_TO_BG_GET_SNAPSHOT" }).then((res: any) => {
-      if (res?.active) {
-        setSnapshot({ active: true, intent: res.intent ?? "", narrative: res.narrative ?? "" });
-      }
+      setSnapshot({
+        active: !!res?.active,
+        intent: res?.intent ?? "",
+        narrative: res?.narrative ?? "",
+        lastSubmitResult: res?.lastSubmitResult ?? null,
+      });
     });
   }, []);
 
   const start = useCallback(async (tabId: number, recordAudio: boolean) => {
     await send({ type: "POPUP_TO_BG_START_RECORDING", tabId, recordAudio });
-    setSnapshot((s) => ({ ...s, active: true }));
+    setSnapshot((s) => ({ ...s, active: true, lastSubmitResult: null }));
   }, []);
 
   const stop = useCallback(async () => {
@@ -40,20 +45,20 @@ export function useSession() {
     await send({ type: "POPUP_TO_BG_FILTER_HOST", hostPattern: pattern });
   }, []);
 
-  const submitDownload = useCallback(async () => {
-    return send({ type: "POPUP_TO_BG_SUBMIT_DOWNLOAD" });
+  const downloadFallback = useCallback(async () => {
+    return send({ type: "POPUP_TO_BG_DOWNLOAD_FALLBACK" });
   }, []);
 
-  const submitPost = useCallback(async () => {
-    return send({ type: "POPUP_TO_BG_SUBMIT_POST" });
+  const retrySubmit = useCallback(async () => {
+    return send({ type: "POPUP_TO_BG_RETRY_SUBMIT" });
   }, []);
 
   const discard = useCallback(async () => {
     await send({ type: "POPUP_TO_BG_DISCARD" });
-    setSnapshot({ active: false, intent: "", narrative: "" });
+    setSnapshot({ active: false, intent: "", narrative: "", lastSubmitResult: null });
   }, []);
 
-  return { snapshot, start, stop, updateIntent, filterHost, submitDownload, submitPost, discard };
+  return { snapshot, start, stop, updateIntent, filterHost, downloadFallback, retrySubmit, discard };
 }
 
 function send(msg: ClientMessage): Promise<unknown> {

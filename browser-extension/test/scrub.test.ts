@@ -8,7 +8,7 @@ import { scrubBody, scrubHeaders } from "../src/capture/scrub.js";
 describe("scrubHeaders", () => {
   for (const c of fixture.headerCases) {
     test(c.name, () => {
-      expect(scrubHeaders(c.input)).toEqual(c.expected);
+      expect(scrubHeaders(c.input as unknown as Record<string, string>)).toEqual(c.expected);
     });
   }
 });

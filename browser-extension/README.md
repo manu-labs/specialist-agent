@@ -29,15 +29,15 @@ npm run test       # vitest — runs scrub fixture, CDP reconstruct, HAR emit, b
 
 ## Use
 
-1. Open the SaaS app you want to teach (e.g. `dashboard.stripe.com`).
-2. Click the extension icon → **Start** (optionally tick "narrate aloud").
-3. Chrome shows a yellow CDP banner; the extension overlays a friendlier "Recording" banner with a **Stop** button.
-4. Drive the workflow. Optionally narrate aloud — the transcript fills in live (Chrome only; Web Speech sends audio to Google).
-5. Click **Stop**. The popup shows request count, total bytes, and a per-host breakdown.
-6. Edit the **intent** field and (optional) **narration** — these become the bundle's `intent` and `narrative`.
-7. Click **Download bundle** to save the `.json` to disk, or **Submit to host** to POST to your configured synthesis endpoint.
+1. **One-time setup:** open the options page and paste the synthesis backend URL + bearer token. Without an endpoint the extension still works, but bundles will save to disk instead of posting.
+2. Open the SaaS app you want to teach (e.g. `dashboard.stripe.com`).
+3. Click the extension icon → **Start** (optionally tick "narrate aloud").
+4. Chrome shows a yellow CDP banner; the extension overlays a friendlier "Recording" banner with a **Stop** button.
+5. Drive the workflow. Optionally narrate aloud — the transcript fills in live (Chrome only; Web Speech sends audio to Google).
+6. Edit the **intent** field and (optional) **narration** at any point — these become the bundle's `intent` and `narrative`.
+7. Click **Stop**. The bundle is built and **automatically POSTed to the configured backend** (`{endpoint}/v1/bundles`). The popup shows status: `Submitting…` → `Submitted to host (trace …)`. No file handling required.
 
-Then, on a machine with `specialist-agent` installed:
+If POST fails (network error, 4xx/5xx, or no endpoint configured) the extension falls back to a local download so a recording is never silently dropped. The popup surfaces the error and a **Retry submit** button. The fallback file can also be fed manually:
 
 ```bash
 specialist-agent learn \
@@ -88,7 +88,7 @@ Filename convention: `specialist-bundle-<iso8601>-<short-id>.json`.
 
 ## POST endpoint contract
 
-When the user clicks "Submit to host", the extension POSTs the bundle JSON to:
+The extension auto-submits each bundle to:
 
 ```
 POST {postEndpoint}/v1/bundles
@@ -96,7 +96,7 @@ Content-Type: application/json
 Authorization: Bearer {postBearerToken}     (omitted if blank)
 ```
 
-Server contract is documented in [`prompts/PLANS/browser-extension.md`](../prompts/PLANS/browser-extension.md) §7.2; the endpoint itself is out of scope for the extension. Errors surface as a popup error toast with a "Download instead" fallback.
+Server contract is documented in [`prompts/PLANS/browser-extension.md`](../prompts/PLANS/browser-extension.md) §7.2; the endpoint itself is out of scope for the extension. On any failure the extension writes a local download instead and exposes a Retry button — the user never has to manually export a file under the happy path.
 
 ## Layout
 
