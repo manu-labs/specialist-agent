@@ -1,10 +1,11 @@
 # Capturing HTTP traces
 
-The agent learns from HTTP traces. The architecture doc lists three capture surfaces; this repo ships full support for two and a recipe for the third.
+The agent learns from HTTP traces. There are four capture surfaces.
 
 | Surface             | What for                                              | Status                            |
 | ------------------- | ----------------------------------------------------- | --------------------------------- |
 | Browser DevTools HAR| Web-app workflows the user drives in a browser       | Use `importHar()` / `--har=...`   |
+| Browser extension   | Same workflows, no DevTools dance — Chrome MV3 capture surface that emits a bundle file | `browser-extension/` (Chrome v1, Firefox v1.1) → `--bundle=...` |
 | MITM proxy HAR      | Native/desktop apps, mobile apps, anything not in DevTools | Use `importHar()` / `--har=...` |
 | `attachFetchInterceptor()` | Embedded inside a Node host that already makes the calls | First-class API in `src/capture/` |
 
@@ -39,7 +40,35 @@ This is the easiest path for SaaS apps.
 
 ---
 
-## Surface 2: MITM proxy
+## Surface 2: Browser extension (Chrome)
+
+A first-party Chrome extension lives in `browser-extension/`. It captures the network conversation via the Chrome DevTools Protocol — same data DevTools sees, driven by an action-bar popup. **By default the extension auto-POSTs each bundle to the synthesis backend you configure in the options page**, so the user never has to deal with files on the happy path.
+
+```bash
+# 1. Build + install the extension (see browser-extension/README.md).
+# 2. Open the options page → paste the synthesis endpoint + bearer token.
+# 3. Click the action icon → Start. Drive your workflow. Click Stop.
+# 4. The bundle is automatically POSTed to {endpoint}/v1/bundles.
+#    The popup shows "Submitted to host (trace …)" with an optional learnUrl.
+```
+
+If no endpoint is configured (or the POST fails), the bundle falls back to a local download so a recording is never silently lost. In that case feed it to the host CLI manually:
+
+```bash
+specialist-agent learn \
+  --tenant=tenants/acme \
+  --bundle=~/Downloads/specialist-bundle-20260502T153011Z-a3b9k2.json
+```
+
+`--bundle` and `--har` are mutually exclusive; intent comes from the bundle itself, so don't pass `--intent` with `--bundle`.
+
+The extension scrubs auth on the way in using the same scrub rules as `src/capture/scrub.ts`. The shared fixture `test/fixtures/scrub-cases.json` is asserted by both copies in CI.
+
+See [`browser-extension/README.md`](../browser-extension/README.md) for build, install, and the bundle schema.
+
+---
+
+## Surface 3: MITM proxy
 
 For non-browser apps (desktop, native, mobile, server-to-server). Common tools:
 
@@ -80,7 +109,7 @@ File → Export → HAR.
 
 ---
 
-## Surface 3: SDK fetch interceptor (embedded use)
+## Surface 4: SDK fetch interceptor (embedded use)
 
 When the agent is embedded inside a Node host that *already* makes the API calls (e.g. an internal automation service), capture happens inline. No external proxy or browser needed.
 

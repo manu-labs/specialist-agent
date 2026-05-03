@@ -1,0 +1,152 @@
+{
+  "$comment": "Shared scrub-behavior fixture used by BOTH src/capture/scrub.ts (host, Vitest) AND browser-extension/src/capture/scrub.ts (extension, Vitest). If either copy of scrub.ts drifts, the corresponding test fails. Cases are written as {input, expected} for either headers or body — the runner picks based on which key is present.",
+  "headerCases": [
+    {
+      "name": "authorization header replaced",
+      "input": { "Authorization": "Bearer sk_live_abc123" },
+      "expected": { "Authorization": "{{auth}}" }
+    },
+    {
+      "name": "case-insensitive match (lowercased key)",
+      "input": { "authorization": "Bearer foo" },
+      "expected": { "authorization": "{{auth}}" }
+    },
+    {
+      "name": "x-api-key replaced",
+      "input": { "x-api-key": "abcdef" },
+      "expected": { "x-api-key": "{{auth}}" }
+    },
+    {
+      "name": "api-key replaced",
+      "input": { "api-key": "abcdef" },
+      "expected": { "api-key": "{{auth}}" }
+    },
+    {
+      "name": "x-auth-token replaced",
+      "input": { "X-Auth-Token": "tok" },
+      "expected": { "X-Auth-Token": "{{auth}}" }
+    },
+    {
+      "name": "x-access-token replaced",
+      "input": { "x-access-token": "tok" },
+      "expected": { "x-access-token": "{{auth}}" }
+    },
+    {
+      "name": "cookie replaced",
+      "input": { "Cookie": "session=abc" },
+      "expected": { "Cookie": "{{auth}}" }
+    },
+    {
+      "name": "set-cookie replaced",
+      "input": { "Set-Cookie": "session=abc; HttpOnly" },
+      "expected": { "Set-Cookie": "{{auth}}" }
+    },
+    {
+      "name": "proxy-authorization replaced",
+      "input": { "proxy-authorization": "Basic ZGVtbzpkZW1v" },
+      "expected": { "proxy-authorization": "{{auth}}" }
+    },
+    {
+      "name": "non-auth headers passed through",
+      "input": { "Content-Type": "application/json", "X-Trace-Id": "abc" },
+      "expected": { "Content-Type": "application/json", "X-Trace-Id": "abc" }
+    },
+    {
+      "name": "mixed header object",
+      "input": { "Authorization": "Bearer x", "Content-Type": "text/plain" },
+      "expected": { "Authorization": "{{auth}}", "Content-Type": "text/plain" }
+    }
+  ],
+  "bodyCases": [
+    {
+      "name": "null is null",
+      "input": null,
+      "expected": null
+    },
+    {
+      "name": "undefined is preserved as null",
+      "input": null,
+      "expected": null
+    },
+    {
+      "name": "primitive number passes through",
+      "input": 42,
+      "expected": 42
+    },
+    {
+      "name": "primitive boolean passes through",
+      "input": true,
+      "expected": true
+    },
+    {
+      "name": "string with embedded bearer",
+      "input": "grant_type=refresh&refresh_token=abc Bearer eyJhbG.foo-bar_baz",
+      "expected": "grant_type=refresh&refresh_token=abc Bearer {{auth}}"
+    },
+    {
+      "name": "string without bearer passes through",
+      "input": "hello world",
+      "expected": "hello world"
+    },
+    {
+      "name": "json with api_key key",
+      "input": { "api_key": "shh" },
+      "expected": { "api_key": "{{auth}}" }
+    },
+    {
+      "name": "json with apikey key",
+      "input": { "apikey": "shh" },
+      "expected": { "apikey": "{{auth}}" }
+    },
+    {
+      "name": "json with access_token",
+      "input": { "access_token": "shh" },
+      "expected": { "access_token": "{{auth}}" }
+    },
+    {
+      "name": "json with refresh_token",
+      "input": { "refresh_token": "shh" },
+      "expected": { "refresh_token": "{{auth}}" }
+    },
+    {
+      "name": "json with client_secret",
+      "input": { "client_secret": "shh" },
+      "expected": { "client_secret": "{{auth}}" }
+    },
+    {
+      "name": "json with password",
+      "input": { "password": "shh" },
+      "expected": { "password": "{{auth}}" }
+    },
+    {
+      "name": "json with secret",
+      "input": { "secret": "shh" },
+      "expected": { "secret": "{{auth}}" }
+    },
+    {
+      "name": "nested client_secret",
+      "input": { "auth": { "client_secret": "shh", "redirect_uri": "https://x" } },
+      "expected": { "auth": { "client_secret": "{{auth}}", "redirect_uri": "https://x" } }
+    },
+    {
+      "name": "array of objects",
+      "input": [{ "api_key": "k1" }, { "api_key": "k2" }],
+      "expected": [{ "api_key": "{{auth}}" }, { "api_key": "{{auth}}" }]
+    },
+    {
+      "name": "non-secret keys preserved",
+      "input": { "name": "alice", "email": "alice@example.com" },
+      "expected": { "name": "alice", "email": "alice@example.com" }
+    },
+    {
+      "name": "deep nesting",
+      "input": { "a": { "b": { "c": { "api_key": "shh", "ok": 1 } } } },
+      "expected": { "a": { "b": { "c": { "api_key": "{{auth}}", "ok": 1 } } } }
+    },
+    {
+      "name": "array with bearer string",
+      "input": ["Bearer abc.def-ghi", "no token here"],
+      "expected": ["Bearer {{auth}}", "no token here"]
+    }
+  ]
+}

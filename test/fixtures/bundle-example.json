@@ -1,0 +1,58 @@
+{
+  "schemaVersion": "1",
+  "intent": "Onboard a new enterprise customer with first invoice",
+  "narrative": "Customer first; for enterprise we always set collection_method to send_invoice. Then invoice item, then finalize the invoice.",
+  "har": {
+    "log": {
+      "version": "1.2",
+      "creator": { "name": "specialist-extension", "version": "0.1.0" },
+      "entries": [
+        {
+          "startedDateTime": "2026-05-02T15:30:11.123Z",
+          "time": 142,
+          "request": {
+            "method": "POST",
+            "url": "https://api.stripe.com/v1/customers",
+            "httpVersion": "HTTP/1.1",
+            "headers": [
+              { "name": "Authorization", "value": "{{auth}}" },
+              { "name": "Content-Type", "value": "application/x-www-form-urlencoded" }
+            ],
+            "queryString": [],
+            "cookies": [],
+            "headersSize": -1,
+            "bodySize": -1,
+            "postData": {
+              "mimeType": "application/x-www-form-urlencoded",
+              "text": "email=alice%40acme.com&name=Acme+Inc"
+            }
+          },
+          "response": {
+            "status": 200,
+            "statusText": "",
+            "httpVersion": "HTTP/1.1",
+            "headers": [{ "name": "Content-Type", "value": "application/json" }],
+            "cookies": [],
+            "headersSize": -1,
+            "bodySize": -1,
+            "redirectURL": "",
+            "content": {
+              "mimeType": "application/json",
+              "text": "{\"id\":\"cus_NffrFeUfNV2Hib\",\"email\":\"alice@acme.com\"}"
+            }
+          },
+          "cache": {},
+          "timings": { "send": 0, "wait": 142, "receive": 0 }
+        }
+      ]
+    }
+  },
+  "audio": null,
+  "metadata": {
+    "capturedBy": "specialist-extension",
+    "extensionVersion": "0.1.0",
+    "browser": "chrome/120",
+    "capturedAt": "2026-05-02T15:30:11.000Z",
+    "tabUrl": "https://dashboard.stripe.com/test/customers"
+  }
+}

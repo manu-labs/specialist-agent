@@ -9,16 +9,20 @@
 // The "run" command starts a Claude Agent SDK session against the tenant's
 // skill set. "log" tails the git history of skill changes.
 
+import { promises as fs } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
 import { SpecialistAgent } from "../agent.js";
 import { TenantWorkspace } from "../tenant/workspace.js";
 import { importHar } from "../capture/har.js";
-import type { ParameterDecision } from "../types.js";
+import { BundleSchema } from "../bundle/schema.js";
+import type { HttpTrace, ParameterDecision } from "../types.js";
 
 interface Flags {
   tenant?: string;
   har?: string;
+  bundle?: string;
   intent?: string;
   model?: string;
   yes?: boolean;
@@ -44,10 +48,18 @@ function parseFlags(argv: string[]): Flags {
 
 async function cmdLearn(flags: Flags): Promise<void> {
   if (!flags.tenant) die("missing --tenant=<path>");
-  if (!flags.har) die("missing --har=<file> (HAR export from browser DevTools, MITM, or extension)");
-  if (!flags.intent) die("missing --intent=\"<one-sentence task description>\"");
+  if (flags.bundle && flags.har) die("--bundle and --har are mutually exclusive");
+  if (flags.bundle && flags.intent) {
+    die("--intent collides with bundle.intent; remove --intent or omit --bundle");
+  }
+  if (!flags.bundle && !flags.har) {
+    die("missing --bundle=<file> (extension capture) or --har=<file> + --intent=\"...\"");
+  }
+  if (flags.har && !flags.intent) die("missing --intent=\"<one-sentence task description>\"");
 
-  const trace = await importHar(flags.har!, flags.intent!);
+  const trace: HttpTrace = flags.bundle
+    ? await loadBundleTrace(flags.bundle)
+    : await importHar(flags.har!, flags.intent!);
   const agent = new SpecialistAgent({
     tenant: { id: path.basename(flags.tenant!), workspacePath: path.resolve(flags.tenant!) },
     ...(flags.model ? { model: flags.model } : {}),
@@ -71,6 +83,22 @@ async function cmdLearn(flags: Flags): Promise<void> {
   console.log(`\nSynthesized workflow: ${result.workflow}`);
   console.log(`Wrappers: ${result.wrappers.join(", ") || "(none new)"}`);
   if (result.commit) console.log(`Commit: ${result.commit.slice(0, 12)}`);
+}
+
+async function loadBundleTrace(bundlePath: string): Promise<HttpTrace> {
+  const raw = await fs.readFile(bundlePath, "utf8");
+  const bundle = BundleSchema.parse(JSON.parse(raw));
+  const tmp = path.join(os.tmpdir(), `specialist-bundle-${Date.now()}.har`);
+  await fs.writeFile(tmp, JSON.stringify(bundle.har));
+  try {
+    const trace = await importHar(tmp, bundle.intent);
+    if (bundle.narrative) {
+      trace.intent = `${bundle.intent}\n\n[narration: ${bundle.narrative}]`;
+    }
+    return trace;
+  } finally {
+    await fs.unlink(tmp).catch(() => {});
+  }
 }
 
 function renderObserved(value: unknown): string {
@@ -152,7 +180,7 @@ async function main() {
       return cmdLog(flags);
     default:
       console.error("usage: specialist-agent <learn|run|log> [flags]");
-      console.error("  learn --tenant=<path> --har=<file> --intent=\"...\" [--auto-keep]");
+      console.error("  learn --tenant=<path> (--bundle=<file> | --har=<file> --intent=\"...\") [--auto-keep]");
       console.error("  run   --tenant=<path> [--yes] \"<prompt>\"");
       console.error("  log   --tenant=<path>");
       process.exit(2);
