@@ -96,7 +96,7 @@ Content-Type: application/json
 Authorization: Bearer {postBearerToken}     (omitted if blank)
 ```
 
-Server contract is documented in [`prompts/PLANS/browser-extension.md`](../prompts/PLANS/browser-extension.md) §7.2; the endpoint itself is out of scope for the extension. On any failure the extension writes a local download instead and exposes a Retry button — the user never has to manually export a file under the happy path.
+A reference implementation of the receiving server lives in this repo at [`src/server/`](../src/server/) — multi-tenant, Railway-deployable, runs `agent.learnFromTrace` on each accepted bundle. See [`docs/SERVER.md`](../docs/SERVER.md) for endpoint details and the deploy guide. On any failure the extension writes a local download instead and exposes a Retry button — the user never has to manually export a file under the happy path.
 
 ## Layout
 
