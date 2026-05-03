@@ -14,12 +14,15 @@
     "typecheck": "tsc --noEmit",
     "agent": "tsx src/cli/main.ts",
     "wrapper": "tsx src/cli/wrapper.ts",
+    "server": "tsx src/server/main.ts",
     "demo": "tsx examples/demo.ts",
     "test": "tsx --test test/**/*.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.1.13",
     "@anthropic-ai/sdk": "^0.40.0",
+    "@hono/node-server": "^2.0.1",
+    "hono": "^4.12.16",
     "zod": "^3.23.8"
   },
   "devDependencies": {

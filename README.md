@@ -10,6 +10,7 @@ A learning agent built on the [Claude Agent SDK](https://docs.claude.com/en/agen
 | [`docs/USAGE.md`](docs/USAGE.md)          | End-to-end real-world walkthrough — capture → synthesize → run          |
 | [`docs/CAPTURE.md`](docs/CAPTURE.md)      | Four ways to capture HTTP traces: DevTools HAR, browser extension, MITM proxy, SDK hook |
 | [`browser-extension/README.md`](browser-extension/README.md) | Chrome MV3 extension that captures workflows and emits a bundle file the host CLI consumes via `--bundle=` |
+| [`docs/SERVER.md`](docs/SERVER.md)        | Multi-tenant synthesis backend (`src/server/`) — receives bundles from the extension, runs `learnFromTrace`, commits to the tenant repo. Railway-deployable. |
 | [`docs/EMBEDDING.md`](docs/EMBEDDING.md)  | Programmatic API for embedding the agent in your own host application  |
 | [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) | Common errors and fixes                                       |
 | [`prompts/`](prompts/)                    | Briefing prompts for follow-up planning agents (next features)          |
